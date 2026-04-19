@@ -16,15 +16,16 @@ import {
   addDoc,
   deleteDoc,
   doc,
-  onSnapshot
+  onSnapshot,
+  updateDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 
 // ================================
-// 🔥 CONFIG (SEU FIREBASE)
+// 🔥 CONFIG
 // ================================
 const firebaseConfig = {
-  apiKey: "AIzaSyDhsV1GJeEvBGBAQmcUXQ8FDcAOXus4DP0",
+  apiKey: "AIzaSy...",
   authDomain: "bmc-ranking.firebaseapp.com",
   projectId: "bmc-ranking",
   storageBucket: "bmc-ranking.firebasestorage.app",
@@ -55,7 +56,7 @@ window.loginFirebase = function () {
 
 
 // ================================
-// 🔥 VERIFICAR LOGIN
+// 🔥 AUTH CHECK
 // ================================
 onAuthStateChanged(auth, (user) => {
   const login = document.getElementById("login-screen");
@@ -82,7 +83,7 @@ window.logout = function () {
 
 
 // ================================
-// 🔥 ADICIONAR PLAYER
+// 🔥 ADD PLAYER (COM POSIÇÃO + DEVICE)
 // ================================
 window.adicionarDoPainel = async function () {
   const nome = document.getElementById("nome").value;
@@ -90,6 +91,7 @@ window.adicionarDoPainel = async function () {
   const categoria = document.getElementById("categoria").value;
   const tier = document.getElementById("tier").value;
   const pontos = document.getElementById("pontos").value;
+  const dispositivo = document.getElementById("dispositivo")?.value || "mobile";
 
   if (!nome || !modo) {
     alert("Preencha tudo!");
@@ -101,7 +103,9 @@ window.adicionarDoPainel = async function () {
     modo,
     categoria,
     tier,
-    pontos
+    pontos: Number(pontos) || 0,
+    dispositivo,
+    posicao: Date.now() // posição automática (ordenável)
   });
 
   limparCampos();
@@ -109,7 +113,33 @@ window.adicionarDoPainel = async function () {
 
 
 // ================================
-// 🔥 REMOVER PLAYER
+// 🔥 EDITAR COMPLETO
+// ================================
+window.editarPlayer = async function (id, p) {
+
+  const nome = prompt("Nome:", p.nome);
+  if (nome === null) return;
+
+  const tier = prompt("Tier (ex: splus, a, bminus):", p.tier);
+  if (tier === null) return;
+
+  const dispositivo = prompt("Dispositivo (mobile, pc, controle):", p.dispositivo || "mobile");
+  if (dispositivo === null) return;
+
+  const posicao = prompt("Posição (número menor = topo):", p.posicao || 0);
+  if (posicao === null) return;
+
+  await updateDoc(doc(db, "players", id), {
+    nome,
+    tier,
+    dispositivo,
+    posicao: Number(posicao)
+  });
+};
+
+
+// ================================
+// 🔥 REMOVER
 // ================================
 window.removerPlayer = async function (id) {
   await deleteDoc(doc(db, "players", id));
@@ -127,16 +157,21 @@ function limparCampos() {
 
 
 // ================================
-// 🔥 CRIAR CARD PLAYER
+// 🔥 CARD PLAYER (CORRIGIDO ESPAÇO)
 // ================================
-function criarPlayer(nome, modo, pontos) {
+function criarPlayer(p) {
   const div = document.createElement("div");
   div.className = "player";
 
   div.innerHTML = `
-    <span class="nick">${nome}</span>
-    <span class="modo">${modo}</span>
-    <span class="pontos">${pontos || 0} pts</span>
+    <span class="nick">${p.nome}</span>
+    <span class="modo">${p.modo}</span>
+    <span class="pontos"> ${p.pontos || 0} pts</span>
+
+    <div class="admin-buttons">
+      <button onclick='editarPlayer("${p.id}", ${JSON.stringify(p)})'>✏️</button>
+      <button onclick='removerPlayer("${p.id}")'>❌</button>
+    </div>
   `;
 
   return div;
@@ -144,30 +179,37 @@ function criarPlayer(nome, modo, pontos) {
 
 
 // ================================
-// 🔥 RENDER TEMPO REAL
+// 🔥 RENDER REALTIME (COM ORDEM)
 // ================================
 onSnapshot(collection(db, "players"), (snapshot) => {
 
-  // limpa tiers
   document.querySelectorAll(".players").forEach(el => el.innerHTML = "");
 
   const lista = document.getElementById("lista");
   if (lista) lista.innerHTML = "";
 
+  const players = [];
+
   snapshot.forEach(docSnap => {
-    const p = docSnap.data();
-    const id = docSnap.id;
+    players.push({
+      id: docSnap.id,
+      ...docSnap.data()
+    });
+  });
+
+  // 🔥 ordenar por posição
+  players.sort((a,b)=>(a.posicao||999999)-(b.posicao||999999));
+
+  players.forEach(p => {
 
     const tierId = `${p.categoria}-${p.tier}`;
     const container = document.getElementById(tierId);
 
     if (container) {
-      container.appendChild(
-        criarPlayer(p.nome, p.modo, p.pontos)
-      );
+      container.appendChild(criarPlayer(p));
     }
 
-    // STAFF LIST
+    // STAFF
     if (lista) {
       const div = document.createElement("div");
 
@@ -175,12 +217,13 @@ onSnapshot(collection(db, "players"), (snapshot) => {
 
       div.innerHTML = `
         <strong>${p.nome}</strong> - ${p.modo}
+        <br>${p.categoria} / ${p.tier}
+        <br>${p.pontos || 0} pts
+        <br>${p.dispositivo || "mobile"}
+        <br>Posição: ${p.posicao || "-"}
         <br>
-        ${p.categoria} / ${p.tier}
-        <br>
-        ${p.pontos || 0} pts
-        <br>
-        <button onclick="removerPlayer('${id}')">Remover</button>
+        <button onclick="removerPlayer('${p.id}')">Remover</button>
+        <button onclick='editarPlayer("${p.id}", ${JSON.stringify(p)})'>Editar</button>
       `;
 
       lista.appendChild(div);
